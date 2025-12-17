@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -16,6 +17,13 @@ const (
 	kafkaBrokers  = "localhost:9092"
 	kafkaTopic    = "test-topic"
 	consumerGroup = "prometheus-consumer"
+)
+
+var (
+	messageCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "kafka_messages_processed_total",
+		Help: "Total number of messages processed",
+	})
 )
 
 func main() {
@@ -37,8 +45,8 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
 	go func() {
-		log.Println("Server starting on :8080")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Println("Server starting on :8081")
+		if err := http.ListenAndServe(":8081", nil); err != nil {
 			log.Fatal(err)
 		}
 	}()
@@ -49,6 +57,11 @@ func main() {
 
 	log.Println("Shutting down...")
 	cancel()
+}
+
+func init() {
+	log.Println("Registering metrics...")
+	prometheus.MustRegister(messageCounter)
 }
 
 func consumeMessages(ctx context.Context, client *kgo.Client) {
@@ -67,8 +80,8 @@ func consumeMessages(ctx context.Context, client *kgo.Client) {
 			})
 
 			fetches.EachRecord(func(record *kgo.Record) {
-				log.Printf("received message: topic=%s partition=%d offset=%d key=%s value=%s",
-					record.Topic, record.Partition, record.Offset, string(record.Key), string(record.Value))
+				messageCounter.Inc()
+				log.Printf("received message: %s", string(record.Value))
 			})
 		}
 	}
